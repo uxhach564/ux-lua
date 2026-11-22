@@ -582,9 +582,10 @@ end)()
         if not d then return end
         d.Visible=false
         if d.Event and d.Handle~=nil then pcall(function() d.Event:Remove(d.Handle) end) end
+        if d.GetKeyEvent and d.GetKeyHandle~=nil then pcall(function() d.GetKeyEvent:Remove(d.GetKeyHandle) end) end
         if valid(d.Container) then pcall(function() d.Container:RemoveFromParent() end) end
-        d.Submit=nil;d.Event=nil;d.Handle=nil;d.Container=nil;d.Parent=nil
-        d.Input=nil;d.Button=nil;d.Status=nil;d.Title=nil;d.Detail=nil;d.Hint=nil;d.Design=nil;d.Cache=nil
+        d.Submit=nil;d.Event=nil;d.Handle=nil;d.GetKeyEvent=nil;d.GetKeyHandle=nil;d.Container=nil;d.Parent=nil
+        d.Input=nil;d.Button=nil;d.GetKeyButton=nil;d.Status=nil;d.Title=nil;d.Detail=nil;d.Hint=nil;d.Design=nil;d.Cache=nil
     end
     -- Approved red/green frame, dark red/green heading, light full-color body.
     -- All gradient/angle/brush work happens at construction. No animation,
@@ -851,31 +852,49 @@ end)()
                 d.Hint=text("Your key is saved automatically",22,149,W-44,19,11,burgundy,7,false,false)
                 d.Status=text(status or "Enter your key",22,170,W-44,23,11,burgundy,8,false,false,true)
             end
-            local button=make("Button",d.Container);d.Button=button
-            local by=welcome and 212 or 201;local bh=welcome and 42 or 34
-            local bw=welcome and 202 or 190;local bx=(W-bw)/2
-            panel(bx-4,by-3,bw+8,bh+6,9,gold,4,16)
-            panel(bx,by,bw,bh,8,{{5,40,92},{10,93,192},{4,46,108}},5,16)
-            pcall(function() button:SetBackgroundColor(color(255,255,255,0)) end)
-            visibility(button,enums.Visible)
-            local label=make("TextBlock",button);label:SetText("OK");style(label,17,white,true);visibility(label,passive)
-            local labelSlot=button:AddChild(label)
-            pcall(function() labelSlot:SetHorizontalAlignment(2);labelSlot:SetVerticalAlignment(2) end)
-            add(button,bx,by,bw,bh,9,true)
-            d.Event=button.OnClicked
-            d.Handle=d.Event:Add(function()
-                if not d.Visible or d.Busy then return end
-                if welcome then
+            local by=welcome and 212 or 201
+            local bh=welcome and 42 or 34
+            local function makeActionButton(labelText,bx,bw,onClick)
+                local button=make("Button",d.Container)
+                panel(bx-4,by-3,bw+8,bh+6,9,gold,4,16)
+                panel(bx,by,bw,bh,8,{{5,40,92},{10,93,192},{4,46,108}},5,16)
+                pcall(function() button:SetBackgroundColor(color(255,255,255,0)) end)
+                visibility(button,enums.Visible)
+                local label=make("TextBlock",button)
+                label:SetText(labelText);style(label,17,white,true);visibility(label,passive)
+                local labelSlot=button:AddChild(label)
+                pcall(function() labelSlot:SetHorizontalAlignment(2);labelSlot:SetVerticalAlignment(2) end)
+                add(button,bx,by,bw,bh,9,true)
+                local event=button.OnClicked
+                local handle=event:Add(onClick)
+                return button,event,handle
+            end
+            if welcome then
+                local bw,bx=202,(W-202)/2
+                d.Button,d.Event,d.Handle=makeActionButton("OK",bx,bw,function()
+                    if not d.Visible or d.Busy then return end
                     destroy(d);d.Dismissed=true
-                    local l=_G.LunarLoginRuntime;if l and l.WelcomeUI==d then l.WelcomeUI=nil;l.Dismissed=true;l.NeedsUpdate=false end
-                    return
-                end
-                local okRead,k=pcall(function() return d.Input:GetText() end)
-                if not okRead or type(k)~="string" then return end
-                k=k:match("^%s*(.-)%s*$")
-                if #k==0 or #k>512 then d.Status:SetText("Enter a valid key");return end
-                if d.Submit then d.Submit(k) end
-            end)
+                    local l=_G.LunarLoginRuntime
+                    if l and l.WelcomeUI==d then l.WelcomeUI=nil;l.Dismissed=true;l.NeedsUpdate=false end
+                end)
+            else
+                local bw=190
+                d.GetKeyButton,d.GetKeyEvent,d.GetKeyHandle=makeActionButton("GET KEY",35,bw,function()
+                    if not d.Visible or d.Busy then return end
+                    pcall(function()
+                        local Web=require("client.slua.logic.url.logic_webview_sdk")
+                        if Web and Web.OpenURL then Web:OpenURL("https://wa.me/923709241014") end
+                    end)
+                end)
+                d.Button,d.Event,d.Handle=makeActionButton("LOGIN",275,bw,function()
+                    if not d.Visible or d.Busy then return end
+                    local okRead,k=pcall(function() return d.Input:GetText() end)
+                    if not okRead or type(k)~="string" then return end
+                    k=k:match("^%s*(.-)%s*$")
+                    if #k==0 or #k>512 then d.Status:SetText("Enter a valid key");return end
+                    if d.Submit then d.Submit(k) end
+                end)
+            end
             renderArt()
 
         end)
@@ -1107,7 +1126,7 @@ end)()
                     if d.StatusText~=message then d.Status:SetText(message);d.StatusText=message end
                     if d.Busy~=L.Pending then
                         d.Busy=L.Pending
-                        pcall(function() d.Input:SetIsEnabled(not L.Pending);d.Button:SetIsEnabled(not L.Pending) end)
+                        pcall(function() d.Input:SetIsEnabled(not L.Pending);d.Button:SetIsEnabled(not L.Pending);if d.GetKeyButton then d.GetKeyButton:SetIsEnabled(not L.Pending) end end)
                     end
                 end
                 wake()
@@ -1141,7 +1160,7 @@ end)()
                 local d=UI.Build("login",L.Key,L.Status,L.Login)
                 if d then
                     d.Busy=L.Pending;d.StatusText=L.Status;L.LoginUI=d
-                    pcall(function() d.Input:SetIsEnabled(not L.Pending);d.Button:SetIsEnabled(not L.Pending) end)
+                    pcall(function() d.Input:SetIsEnabled(not L.Pending);d.Button:SetIsEnabled(not L.Pending);if d.GetKeyButton then d.GetKeyButton:SetIsEnabled(not L.Pending) end end)
                 end
             end
             L.NeedsUpdate=true -- Half-second retry/readiness while locked only.

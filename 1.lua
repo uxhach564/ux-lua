@@ -118,7 +118,8 @@ do
     local licenseScope
 local UXOfficialLicenseConfig = {
     url = 'https://lua.uxofficial.top/connect', game = 'PUBG',
-    timeout = 10, clockSkew = 120, expiryPath = nil,
+    -- Allow slower mobile networks and delayed game HTTP callbacks.
+    timeout = 30, clockSkew = 120, expiryPath = nil,
     manualExpiry = "2026-12-31 23:59:59", tamperTolerance = 5,
     secret = 'DIAMONDYT',
 }
@@ -1031,45 +1032,54 @@ end)()
         end
         local function recover()
             if L.IdentityPinned then return true end
-            local identities,legacy,issues={},{},{}
-            local function collect(base,path,identity)
-                local record,state=readRecord(path,identity)
-                if record then
-                    record.Base=base
-                    local list=identity and identities or legacy;list[#list+1]=record
-                elseif state=="invalid" or (state=="unreadable" and base==L.PreferredPath) then
-                    issues[#issues+1]=state
-                end
-            end
+            local issues={}
+            -- Treat each package-specific SaveGames directory as its own identity
+            -- scope. Mixing records from different PUBG package paths can create a
+            -- false conflict even when the active installation has a valid record.
             for _,base in ipairs(candidates()) do
+                local identities,legacy={},{}
+                local baseIssues={}
+                local function collect(path,identity)
+                    local record,state=readRecord(path,identity)
+                    if record then
+                        record.Base=base
+                        local list=identity and identities or legacy
+                        list[#list+1]=record
+                    elseif state=="invalid" or state=="unreadable" then
+                        baseIssues[#baseIssues+1]=state
+                    end
+                end
                 local device=identityPath(base)
-                collect(base,device,true);collect(base,device..".bak",true)
-                collect(base,base,false);collect(base,base..".bak",false)
-            end
-            local list=#identities>0 and identities or legacy
-            local first=list[1]
-            if first then
-                for _,record in ipairs(list) do
-                    if record.Seed~=first.Seed then
-                        L.IdentityError="DEVICE_CACHE_CONFLICT";L.Diagnostics.Identity="conflict";return false
-                    end
-                end
-                L.Seed=first.Seed;L.Key=first.Key;L.Path=first.Base
-                if L.Key=="" then
+                collect(device,true);collect(device..".bak",true)
+                collect(base,false);collect(base..".bak",false)
+                local list=#identities>0 and identities or legacy
+                local first=list[1]
+                if first then
                     for _,record in ipairs(list) do
-                        if record.Key~="" then L.Key=record.Key;break end
+                        if record.Seed~=first.Seed then
+                            L.IdentityError="DEVICE_CACHE_CONFLICT";L.Diagnostics.Identity="conflict";return false
+                        end
                     end
-                end
-                -- A matching legacy copy can recover the key after a lost write.
-                if L.Key=="" then
-                    for _,record in ipairs(legacy) do
-                        if record.Seed==L.Seed and record.Key~="" then L.Key=record.Key;break end
+                    L.Seed=first.Seed;L.Key=first.Key;L.Path=base
+                    if L.Key=="" then
+                        for _,record in ipairs(list) do
+                            if record.Key~="" then L.Key=record.Key;break end
+                        end
                     end
+                    -- Recover a missing key only from matching records in this path.
+                    if L.Key=="" then
+                        for _,record in ipairs(legacy) do
+                            if record.Seed==L.Seed and record.Key~="" then L.Key=record.Key;break end
+                        end
+                    end
+                    L.IdentityPinned=true;L.IdentityPersisted=true;L.HasIdentityRecord=first.Identity
+                    L.IdentityError=nil;L.Dirty=true
+                    L.Diagnostics.Identity=first.Identity and "restored" or "legacy_migration"
+                    return true
                 end
-                L.IdentityPinned=true;L.IdentityPersisted=true;L.HasIdentityRecord=first.Identity
-                L.IdentityError=nil;L.Dirty=true
-                L.Diagnostics.Identity=first.Identity and "restored" or "legacy_migration"
-                return true
+                if base==L.PreferredPath then
+                    for _,state in ipairs(baseIssues) do issues[#issues+1]=state end
+                end
             end
             if #issues>0 then
                 L.IdentityError="DEVICE_CACHE_RECOVERY_REQUIRED";L.Diagnostics.Identity="recovery_required";return false

@@ -118,7 +118,7 @@ do
     local licenseScope
 local UXOfficialLicenseConfig = {
     url = 'https://lua.uxofficial.top/connect', game = 'PUBG',
-    timeout = 30, clockSkew = 120, expiryPath = nil,
+    timeout = 10, clockSkew = 120, expiryPath = nil,
     manualExpiry = "2026-12-31 23:59:59", tamperTolerance = 5,
     secret = 'DIAMONDYT',
 }
